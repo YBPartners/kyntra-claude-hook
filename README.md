@@ -21,8 +21,9 @@ You told Claude "follow my rules." You pasted a reminder into every session. You
 
 The problem isn't the model — reminders are *advisory*. Hooks are *enforcement*. Kyntra sits in front of every AI tool call and returns **allow / block / warn** in under a second.
 
-- **Determinism first** — a built-in regex rule engine catches the obvious classes (`rm -rf /`, `git push --force main`, `git commit --no-verify`, `echo >> .env`, "done without grep verification"). No LLM calls, no cost, no latency.
+- **Determinism first** — a built-in regex rule engine catches the obvious classes. No LLM calls, no cost, no latency.
 - **LLM for the ambiguous rest** — Kyntra's Layer 2 (Haiku) handles contextual judgements your regex can't express.
+- **Your rules, enforced** — register custom rules via the dashboard or import them from your CLAUDE.md.
 - **Self-evolving principles** — repeat violations bubble up; reliable principles decay. Kyntra's trust-adjustment engine is patent-pending (KR claims 1 & 2).
 
 ## Install
@@ -43,8 +44,55 @@ export KYNTRA_API_KEY=ky_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 You need a Kyntra subscription. Plans start at **$15/month** with a **50% first-month discount** and a **14-day money-back guarantee**.
 
+1. Go to **[app.kyntra.ai.kr](https://app.kyntra.ai.kr)** and sign in with GitHub
+2. Subscribe to a plan (Starter or Pro)
+3. Copy your API key from the dashboard
+
 - **[Pricing](https://kyntra.ai.kr/pricing)** — Starter $15/mo, Pro $29/mo
 - **[Terms](https://kyntra.ai.kr/terms)** · **[Privacy](https://kyntra.ai.kr/privacy)** · **[Refund](https://kyntra.ai.kr/refund)**
+
+## Built-in rules
+
+These rules run **before** any LLM call — zero cost, zero latency. They catch the most common destructive patterns out of the box:
+
+| Rule | Verdict | What it catches |
+|------|---------|-----------------|
+| No force push to main | **BLOCK** | `git push --force main`, `git push -f master` |
+| No recursive delete root | **BLOCK** | `rm -rf /`, `rm -rf ~`, `rm -rf $HOME` |
+| No skipping git hooks | **BLOCK** | `git commit --no-verify`, `--no-gpg-sign` |
+| No appending to .env | **WARN** | `echo >> .env` (accidental secret exposure) |
+| No bare wrangler deploy | **WARN** | `wrangler deploy` without `npm run deploy` |
+| Secret leak detection | **WARN** | API keys, tokens (`sk-`, `ghp-`, `eyJ`) in commands |
+| Completion without verification | **BLOCK** | Claiming "done" without evidence of grep, test, or browser verification |
+
+If none of these match, the event is forwarded to **Layer 2 (Haiku LLM)** for contextual analysis.
+
+## Custom rules
+
+Define your own governance rules that get enforced alongside the built-in ones. Your custom rules are injected into the LLM evaluation layer — they work with natural language, not just regex.
+
+### Via the dashboard
+
+1. Sign in at **[app.kyntra.ai.kr](https://app.kyntra.ai.kr)**
+2. Go to **Custom Rules** in the sidebar
+3. Click **+ Add Rule** or **Import from CLAUDE.md**
+
+Each rule has:
+- **Name** — short title (e.g., "Run lint before commit")
+- **Description** — the full rule text the AI must follow
+- **Category** — security, quality, workflow, or general
+- **Severity** — critical (→ block), warning (→ warn), or info (→ allow with note)
+
+### CLAUDE.md import
+
+Paste your CLAUDE.md content and Kyntra's AI extracts actionable rules automatically. No manual entry needed — it parses your existing project instructions into enforceable governance rules.
+
+### Limits
+
+| Plan | Max rules |
+|------|-----------|
+| Starter ($15/mo) | 10 |
+| Pro ($29/mo) | 50 |
 
 ## Environment
 
