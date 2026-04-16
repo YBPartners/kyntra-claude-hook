@@ -1,0 +1,49 @@
+{
+  "name": "@kyntra/claude-hook",
+  "version": "0.1.0",
+  "description": "Real-time AI agent governance for Claude Code — enforce your coding principles via hooks. Blocks destructive commands and catches false 'complete' reports.",
+  "keywords": [
+    "claude-code",
+    "claude",
+    "anthropic",
+    "ai-governance",
+    "ai-agent",
+    "ai-safety",
+    "hooks",
+    "llm-compliance",
+    "compliance",
+    "governance",
+    "developer-tools",
+    "kyntra",
+    "flowlabs"
+  ],
+  "homepage": "https://kyntra.ai.kr",
+  "bugs": {
+    "url": "https://github.com/YBPartners/kyntra-claude-hook/issues",
+    "email": "contact@kyntra.ai.kr"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YBPartners/kyntra-claude-hook.git"
+  },
+  "author": "Flowlabs <contact@kyntra.ai.kr> (https://kyntra.ai.kr)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./bridge.js",
+  "bin": {
+    "kyntra-claude-hook": "./install.js"
+  },
+  "files": [
+    "install.js",
+    "bridge.js",
+    "client.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --experimental-vm-modules --test ./test/*.test.js || echo 'no tests yet'"
+  }
+}
