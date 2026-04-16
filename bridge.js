@@ -83,12 +83,13 @@ function normalizeEvent(raw) {
 }
 
 /**
- * Build context-aware watermark message.
- * - Conversation/planning: "not a monitoring target"
- * - Tool use: detailed governance feedback with principle references
+ * Build context-aware watermark + user-visible instruction.
+ *
+ * The watermark goes into additionalContext (visible to Claude only).
+ * The instruction tells Claude to include a governance badge in its response
+ * so the END USER can see Kyntra is active.
  */
 function buildWatermark(event, verdict) {
-  const S = '\u{1F6E1}'; // shield
   const d = verdict.decision || 'allow';
   const ms = verdict.latency_ms != null ? `${verdict.latency_ms}ms` : '';
   const layer = verdict.layer || '';
@@ -99,52 +100,56 @@ function buildWatermark(event, verdict) {
   const reason = verdict.reason || '';
   const evType = (event.event_type || '').toLowerCase();
 
-  // ── Conversation / planning: not a monitoring target ──
+  // ── Internal log (for Claude's context) ──
+  const logParts = ['[KYNTRA]', d];
+  if (tool) logParts.push(tool);
+  if (layer) logParts.push(`layer:${layer}`);
+  if (ms) logParts.push(ms);
+  if (pid) logParts.push(pid);
+  const internalLog = logParts.join(' | ');
+
+  // ── User-visible instruction (Claude includes this in its response) ──
+  let instruction = '';
+
   if (evType === 'userpromptsubmit' || evType === 'user_prompt_submit') {
-    return `${S} KYNTRA \u2501 conversation mode \u00B7 governance activates on tool use`;
+    instruction = [
+      '[KYNTRA-DISPLAY] You MUST include the following line at the VERY END of your response (after all content). Do not skip this.',
+      'Display exactly this line:',
+      '',
+      '---',
+      '`🛡 Kyntra Governance` · session active · awaiting tool calls',
+    ].join('\n');
   }
 
-  // ── Stop: session summary ──
-  if (evType === 'stop') {
-    return `${S} KYNTRA \u2501 response verified \u00B7 governance active`;
+  else if (evType === 'pretooluse' || evType === 'pre_tool_use') {
+    const what = tool === 'Bash' && cmd
+      ? `\`${tool}\`: \`${cmd}${event.command && event.command.length > 60 ? '...' : ''}\``
+      : tool && fp ? `\`${tool}\`: \`${fp}\`` : `\`${tool || 'action'}\``;
+    const layerLabel = layer === 'rules' ? 'deterministic rules' : layer === 'haiku' ? 'AI analysis (Haiku)' : layer || 'engine';
+    const verdict_line = d === 'warn'
+      ? `**WARN** · ${reason || pid || 'soft violation'} · ${layerLabel}${ms ? ' · ' + ms : ''}`
+      : `**ALLOW** · ${layerLabel}${pid ? ' · ' + pid : ''}${ms ? ' · ' + ms : ''}`;
+
+    instruction = [
+      `[KYNTRA-DISPLAY] After completing this tool action, you MUST include the following governance result at the END of your response. Do not skip this.`,
+      'Display exactly this block:',
+      '',
+      '---',
+      `\`🛡 Kyntra Governance\` · ${what} → ${verdict_line}`,
+    ].join('\n');
   }
 
-  // ── PostToolUse: brief post-check ──
-  if (evType === 'posttooluse' || evType === 'post_tool_use') {
-    const target = fp || tool || 'output';
-    if (d === 'warn') {
-      return `${S} KYNTRA \u2501 post-check ${target} \u2192 warn \u00B7 ${reason || pid}`;
-    }
-    return `${S} KYNTRA \u2501 post-check ${target} \u2192 ok \u00B7 no violations`;
+  else if (evType === 'posttooluse' || evType === 'post_tool_use') {
+    // PostToolUse: no user-visible output (PreToolUse already covers it)
+    instruction = '';
   }
 
-  // ── PreToolUse: THE MAIN EVENT — detailed governance feedback ──
-  const parts = [`${S} KYNTRA \u2501`];
-
-  // What was checked
-  if (tool === 'Bash' && cmd) {
-    parts.push(`Bash: "${cmd}${event.command && event.command.length > 60 ? '...' : ''}"`);
-  } else if (tool && fp) {
-    parts.push(`${tool}: ${fp}`);
-  } else if (tool) {
-    parts.push(tool);
+  else if (evType === 'stop') {
+    // Stop: no additional instruction (UserPromptSubmit or PreToolUse already set it)
+    instruction = '';
   }
 
-  // Verdict
-  parts.push(`\u2192 ${d.toUpperCase()}`);
-
-  // Principle reference (the key differentiator)
-  if (pid) {
-    parts.push(pid);
-  }
-
-  // Layer + latency
-  const meta = [];
-  if (layer) meta.push(`layer:${layer}`);
-  if (ms) meta.push(ms);
-  if (meta.length) parts.push(meta.join(' \u00B7 '));
-
-  return parts.join(' \u00B7 ');
+  return instruction ? `${internalLog}\n\n${instruction}` : internalLog;
 }
 
 async function main() {
