@@ -3,6 +3,7 @@
  * @kyntra/claude-hook — installer CLI
  *
  *   npx @kyntra/claude-hook install       Append hooks to ~/.claude/settings.json
+ *   npx @kyntra/claude-hook status        Check if hooks are installed and API key works
  *   npx @kyntra/claude-hook print-config  Print the hook JSON snippet and exit
  *   npx @kyntra/claude-hook uninstall     Remove Kyntra hooks from settings.json
  *   npx @kyntra/claude-hook --help
@@ -62,7 +63,8 @@ function usage() {
   process.stdout.write(`@kyntra/claude-hook — Real-time AI agent governance for Claude Code
 
 Usage:
-  npx @kyntra/claude-hook install       Append hooks to ~/.claude/settings.json
+  npx @kyntra/claude-hook install       Install hooks into ~/.claude/settings.json
+  npx @kyntra/claude-hook status        Check installation and API key status
   npx @kyntra/claude-hook print-config  Print the hook JSON snippet and exit
   npx @kyntra/claude-hook uninstall     Remove Kyntra hooks from settings.json
   npx @kyntra/claude-hook --help        Show this help
@@ -74,6 +76,116 @@ Environment:
 Homepage:  https://kyntra.ai.kr
 License:   MIT (client adapter only — server engine is patent-pending)
 `);
+}
+
+// ─── OS detection ────────────────────────────────────
+
+function getEnvInstructions() {
+  const p = process.platform;
+  if (p === 'win32') {
+    return {
+      platform: 'Windows',
+      permanent: 'powershell -Command "[System.Environment]::SetEnvironmentVariable(\'KYNTRA_API_KEY\', \'ky_live_YOUR_KEY_HERE\', \'User\')"',
+      temporary: 'set KYNTRA_API_KEY=ky_live_YOUR_KEY_HERE',
+      note: 'After setting, close and reopen your terminal (or Claude Code) for it to take effect.',
+    };
+  }
+  if (p === 'darwin') {
+    return {
+      platform: 'macOS',
+      permanent: 'echo \'export KYNTRA_API_KEY=ky_live_YOUR_KEY_HERE\' >> ~/.zshrc && source ~/.zshrc',
+      temporary: 'export KYNTRA_API_KEY=ky_live_YOUR_KEY_HERE',
+      note: 'Restart Claude Code after setting.',
+    };
+  }
+  return {
+    platform: 'Linux',
+    permanent: 'echo \'export KYNTRA_API_KEY=ky_live_YOUR_KEY_HERE\' >> ~/.bashrc && source ~/.bashrc',
+    temporary: 'export KYNTRA_API_KEY=ky_live_YOUR_KEY_HERE',
+    note: 'Restart Claude Code after setting.',
+  };
+}
+
+// ─── Status command ──────────────────────────────────
+
+async function status() {
+  const file = settingsPath();
+  const checks = [];
+
+  // 1. settings.json exists
+  const fileExists = fs.existsSync(file);
+  checks.push({ label: 'settings.json exists', ok: fileExists, detail: fileExists ? file : 'NOT FOUND' });
+
+  // 2. Kyntra hooks present
+  let hooksFound = false;
+  if (fileExists) {
+    const settings = readSettings(file);
+    const hookEvents = settings.hooks || {};
+    for (const evName of Object.keys(hookEvents)) {
+      const entries = Array.isArray(hookEvents[evName]) ? hookEvents[evName] : [];
+      for (const entry of entries) {
+        const hooks = Array.isArray(entry?.hooks) ? entry.hooks : [];
+        if (hooks.some((h) => h?._kyntra === KYNTRA_MARKER)) { hooksFound = true; break; }
+      }
+      if (hooksFound) break;
+    }
+  }
+  checks.push({ label: 'Kyntra hooks installed', ok: hooksFound, detail: hooksFound ? 'PreToolUse + PostToolUse + Stop' : 'Run: npx @kyntra/claude-hook install' });
+
+  // 3. API key in environment
+  const apiKey = process.env.KYNTRA_API_KEY || '';
+  const keySet = apiKey.length > 0;
+  checks.push({ label: 'KYNTRA_API_KEY set', ok: keySet, detail: keySet ? `${apiKey.slice(0, 12)}...` : 'NOT SET — see instructions below' });
+
+  // 4. API connectivity (only if key is set)
+  let apiOk = false;
+  let apiDetail = 'skipped (no API key)';
+  if (keySet) {
+    try {
+      const endpoint = process.env.KYNTRA_ENDPOINT || 'https://app.kyntra.ai.kr/api/governance/check';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_type: 'status_check', tool: 'StatusCheck', command: 'echo kyntra-status-test' }),
+        signal: AbortSignal.timeout(5000),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.decision) {
+        apiOk = true;
+        apiDetail = `${res.status} OK — tier: ${body.tier || 'unknown'}, latency: ${body.latency_ms || '?'}ms`;
+      } else if (res.status === 402) {
+        apiDetail = `${res.status} — API key valid but no active subscription. Subscribe at https://kyntra.ai.kr/pricing`;
+      } else {
+        apiDetail = `${res.status} — ${body.error || body.message || 'unexpected response'}`;
+      }
+    } catch (err) {
+      apiDetail = `FAILED — ${err?.message || String(err)}`;
+    }
+  }
+  checks.push({ label: 'API connectivity', ok: apiOk, detail: apiDetail });
+
+  // Print results
+  process.stdout.write('\n  @kyntra/claude-hook — Status\n\n');
+  for (const c of checks) {
+    const icon = c.ok ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m';
+    process.stdout.write(`  ${icon}  ${c.label}\n     ${c.detail}\n\n`);
+  }
+
+  const allOk = checks.every((c) => c.ok);
+  if (allOk) {
+    process.stdout.write('  \x1b[32m🛡  Kyntra governance is active.\x1b[0m\n');
+    process.stdout.write('  Every Claude Code tool call is being verified in real time.\n\n');
+  } else {
+    if (!keySet) {
+      const env = getEnvInstructions();
+      process.stdout.write(`  ── How to set KYNTRA_API_KEY (${env.platform}) ──\n\n`);
+      process.stdout.write(`  Permanent:\n    ${env.permanent}\n\n`);
+      process.stdout.write(`  This session only:\n    ${env.temporary}\n\n`);
+      process.stdout.write(`  ${env.note}\n\n`);
+      process.stdout.write(`  Don't have a key? Sign up at https://kyntra.ai.kr/pricing\n\n`);
+    }
+    process.stdout.write('  Run \x1b[36mnpx @kyntra/claude-hook status\x1b[0m again after fixing.\n\n');
+  }
 }
 
 function printConfig() {
@@ -158,15 +270,31 @@ function install() {
   const next = { ...existing, hooks: mergedHooks };
   writeSettings(file, next);
 
-  process.stdout.write(`✓  Installed Kyntra hooks → ${file}\n`);
+  process.stdout.write(`\n✓  Installed Kyntra hooks → ${file}\n`);
   if (backup) process.stdout.write(`✓  Backup saved → ${backup}\n`);
+
+  const env = getEnvInstructions();
+
+  if (!process.env.KYNTRA_API_KEY) {
+    process.stdout.write(
+      `\n── Step 1: Set your API key (${env.platform}) ──\n\n` +
+      `  ${env.permanent}\n\n` +
+      `  ${env.note}\n\n` +
+      `  Don't have a key? Sign up at https://kyntra.ai.kr/pricing\n`,
+    );
+  }
+
   process.stdout.write(
-    `\nNext steps:\n` +
-      `  1. Set KYNTRA_API_KEY in your shell profile (.zshrc / .bashrc / Windows env)\n` +
-      `  2. Restart Claude Code\n` +
-      `  3. Try a blocked command: \`git push --force origin main\`\n` +
-      `     You should see:  [KYNTRA] BLOCKED — Force push to main/master branch is blocked\n` +
-      `\nManage your account: https://app.kyntra.ai.kr\n`,
+    `\n── Step 2: Restart Claude Code ──\n\n` +
+    `  Close and reopen Claude Code completely (not just a new session).\n`,
+  );
+
+  process.stdout.write(
+    `\n── Step 3: Verify ──\n\n` +
+    `  npx @kyntra/claude-hook status\n\n` +
+    `  This will check if hooks are installed, API key is loaded,\n` +
+    `  and the governance engine is reachable.\n\n` +
+    `Manage your account: https://app.kyntra.ai.kr\n`,
   );
 }
 
@@ -200,6 +328,10 @@ switch (cmd) {
     break;
   case 'install':
     install();
+    break;
+  case 'status':
+  case 'check':
+    await status();
     break;
   case 'uninstall':
   case 'remove':
