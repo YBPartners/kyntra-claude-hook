@@ -82,6 +82,71 @@ function normalizeEvent(raw) {
   };
 }
 
+/**
+ * Build context-aware watermark message.
+ * - Conversation/planning: "not a monitoring target"
+ * - Tool use: detailed governance feedback with principle references
+ */
+function buildWatermark(event, verdict) {
+  const S = '\u{1F6E1}'; // shield
+  const d = verdict.decision || 'allow';
+  const ms = verdict.latency_ms != null ? `${verdict.latency_ms}ms` : '';
+  const layer = verdict.layer || '';
+  const tool = event.tool || '';
+  const cmd = event.command ? event.command.slice(0, 60) : '';
+  const fp = event.file_path ? event.file_path.split(/[/\\]/).pop() : '';
+  const pid = verdict.principle_id || '';
+  const reason = verdict.reason || '';
+  const evType = (event.event_type || '').toLowerCase();
+
+  // ── Conversation / planning: not a monitoring target ──
+  if (evType === 'userpromptsubmit' || evType === 'user_prompt_submit') {
+    return `${S} KYNTRA \u2501 conversation mode \u00B7 governance activates on tool use`;
+  }
+
+  // ── Stop: session summary ──
+  if (evType === 'stop') {
+    return `${S} KYNTRA \u2501 response verified \u00B7 governance active`;
+  }
+
+  // ── PostToolUse: brief post-check ──
+  if (evType === 'posttooluse' || evType === 'post_tool_use') {
+    const target = fp || tool || 'output';
+    if (d === 'warn') {
+      return `${S} KYNTRA \u2501 post-check ${target} \u2192 warn \u00B7 ${reason || pid}`;
+    }
+    return `${S} KYNTRA \u2501 post-check ${target} \u2192 ok \u00B7 no violations`;
+  }
+
+  // ── PreToolUse: THE MAIN EVENT — detailed governance feedback ──
+  const parts = [`${S} KYNTRA \u2501`];
+
+  // What was checked
+  if (tool === 'Bash' && cmd) {
+    parts.push(`Bash: "${cmd}${event.command && event.command.length > 60 ? '...' : ''}"`);
+  } else if (tool && fp) {
+    parts.push(`${tool}: ${fp}`);
+  } else if (tool) {
+    parts.push(tool);
+  }
+
+  // Verdict
+  parts.push(`\u2192 ${d.toUpperCase()}`);
+
+  // Principle reference (the key differentiator)
+  if (pid) {
+    parts.push(pid);
+  }
+
+  // Layer + latency
+  const meta = [];
+  if (layer) meta.push(`layer:${layer}`);
+  if (ms) meta.push(ms);
+  if (meta.length) parts.push(meta.join(' \u00B7 '));
+
+  return parts.join(' \u00B7 ');
+}
+
 async function main() {
   const raw = await readStdin();
   if (!raw) {
@@ -112,17 +177,8 @@ async function main() {
     );
   }
 
-  // Governance watermark — visible presence via stdout JSON (additionalContext)
-  const tier = verdict.tier || '';
-  const layer = verdict.layer || 'rules';
-  const ms = verdict.latency_ms != null ? `${verdict.latency_ms}ms` : '';
-  const parts = ['[KYNTRA]', verdict.decision || 'allow'];
-  if (layer) parts.push(`layer:${layer}`);
-  if (tier) parts.push(`tier:${tier}`);
-  if (ms) parts.push(ms);
-  if (verdict.principle_id) parts.push(verdict.principle_id);
-  const watermark = parts.join(' · ');
-
+  // Governance watermark — context-aware feedback via stdout JSON
+  const watermark = buildWatermark(event, verdict);
   process.stdout.write(JSON.stringify({
     suppressOutput: true,
     hookSpecificOutput: {

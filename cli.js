@@ -257,49 +257,113 @@ function writeSettings(file, obj) {
   fs.renameSync(tmp, file);
 }
 
-function install() {
-  if (!process.env.KYNTRA_API_KEY) {
-    process.stderr.write(
-      '\n⚠  KYNTRA_API_KEY environment variable is not set.\n' +
-        '   Sign up at https://kyntra.ai.kr/pricing to get one, then:\n' +
-        '     export KYNTRA_API_KEY=ky_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n' +
-        '\n   Proceeding with install — the hook will fail-open at runtime until the key is set.\n\n',
+// ─── Read single line from stdin (for API key prompt) ─
+
+function promptLine(question) {
+  return new Promise((resolve) => {
+    process.stdout.write(question);
+    let data = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.once('data', (chunk) => {
+      data = chunk.trim();
+      resolve(data);
+    });
+    // If piped / no TTY, resolve empty after 100ms
+    if (!process.stdin.isTTY) setTimeout(() => resolve(''), 100);
+  });
+}
+
+// ─── Set env var permanently (OS-specific) ───────────
+
+async function setEnvPermanent(key, value) {
+  // Validate key/value to prevent injection
+  if (!/^[A-Z_]+$/.test(key) || /['"`$\\]/.test(value)) return false;
+  const p = process.platform;
+  try {
+    if (p === 'win32') {
+      const { execSync } = await import('node:child_process');
+      // Use environment block to pass value safely (no shell interpolation)
+      execSync('powershell -Command "[System.Environment]::SetEnvironmentVariable($env:_K, $env:_V, \'User\')"', {
+        stdio: 'ignore',
+        env: { ...process.env, _K: key, _V: value },
+      });
+      return true;
+    }
+    // macOS / Linux — append to shell profile
+    const profile = p === 'darwin'
+      ? path.join(os.homedir(), '.zshrc')
+      : path.join(os.homedir(), '.bashrc');
+    const line = `\nexport ${key}=${value}\n`;
+    // Avoid duplicate
+    if (fs.existsSync(profile)) {
+      const content = fs.readFileSync(profile, 'utf8');
+      if (content.includes(`${key}=`)) return true; // already there
+    }
+    fs.appendFileSync(profile, line);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function install() {
+  const file = settingsPath();
+  let apiKey = process.env.KYNTRA_API_KEY || '';
+  const env = getEnvInstructions();
+
+  // ── Step 1: API Key ──
+  if (!apiKey) {
+    process.stdout.write(
+      '\n┌─────────────────────────────────────────┐\n' +
+      '│  🛡  Kyntra — AI Governance for Claude   │\n' +
+      '└─────────────────────────────────────────┘\n\n',
+    );
+    process.stdout.write(
+      '  API key is required for governance checks.\n' +
+      '  Get one at: https://kyntra.ai.kr/pricing\n\n',
+    );
+    apiKey = await promptLine('  Paste your API key (or press Enter to skip): ');
+  }
+
+  if (apiKey && apiKey.startsWith('ky_live_')) {
+    // Auto-set environment variable
+    const saved = await setEnvPermanent('KYNTRA_API_KEY', apiKey);
+    if (saved) {
+      process.stdout.write(`\n  ✓  API key saved to ${env.platform} environment\n`);
+      process.stdout.write(`     ${apiKey.slice(0, 12)}${'•'.repeat(20)}\n`);
+    } else {
+      process.stdout.write(`\n  ⚠  Could not auto-save. Set it manually:\n`);
+      process.stdout.write(`     ${env.permanent.replace('ky_live_YOUR_KEY_HERE', apiKey)}\n`);
+    }
+  } else if (!apiKey) {
+    process.stdout.write(
+      '\n  ⚠  No API key provided. Hook will fail-open until set.\n' +
+      `     Set it later:\n     ${env.permanent}\n`,
     );
   }
 
-  const file = settingsPath();
+  // ── Step 2: Install hooks ──
   const existing = readSettings(file);
   const backup = backupIfExists(file);
-
   const mergedHooks = mergeHooks(existing.hooks, buildHookSnippet());
   const next = { ...existing, hooks: mergedHooks };
   writeSettings(file, next);
 
-  process.stdout.write(`\n✓  Installed Kyntra hooks → ${file}\n`);
-  if (backup) process.stdout.write(`✓  Backup saved → ${backup}\n`);
+  process.stdout.write(`\n  ✓  Hooks installed → ${file}\n`);
+  if (backup) process.stdout.write(`  ✓  Backup → ${backup}\n`);
 
-  const env = getEnvInstructions();
-
-  if (!process.env.KYNTRA_API_KEY) {
-    process.stdout.write(
-      `\n── Step 1: Set your API key (${env.platform}) ──\n\n` +
-      `  ${env.permanent}\n\n` +
-      `  ${env.note}\n\n` +
-      `  Don't have a key? Sign up at https://kyntra.ai.kr/pricing\n`,
-    );
-  }
-
+  // ── Step 3: Next steps ──
   process.stdout.write(
-    `\n── Step 2: Restart Claude Code ──\n\n` +
-    `  Close and reopen Claude Code completely (not just a new session).\n`,
-  );
-
-  process.stdout.write(
-    `\n── Step 3: Verify ──\n\n` +
-    `  npx @kyntra/claude-hook status\n\n` +
-    `  This will check if hooks are installed, API key is loaded,\n` +
-    `  and the governance engine is reachable.\n\n` +
-    `Manage your account: https://app.kyntra.ai.kr\n`,
+    '\n┌─────────────────────────────────────────┐\n' +
+    '│  Almost done! Two more steps:           │\n' +
+    '│                                         │\n' +
+    '│  1. Restart Claude Code                 │\n' +
+    '│     (close and reopen completely)       │\n' +
+    '│                                         │\n' +
+    '│  2. Verify:                             │\n' +
+    '│     npx @kyntra/claude-hook status      │\n' +
+    '└─────────────────────────────────────────┘\n\n' +
+    '  Manage: https://app.kyntra.ai.kr\n\n',
   );
 }
 
