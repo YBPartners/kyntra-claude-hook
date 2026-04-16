@@ -112,20 +112,24 @@ async function main() {
     );
   }
 
-  // Governance watermark on Stop events — show presence
-  if (event.event_type === 'stop' || event.event_type === 'Stop') {
-    const tier = verdict.tier || '';
-    const layer = verdict.layer || 'rules';
-    const ms = verdict.latency_ms != null ? `${verdict.latency_ms}ms` : '';
-    const shield = '\u{1F6E1}';  // shield emoji
-    const bar = '\u2501';        // horizontal line
-    const parts = [`${shield} Kyntra`];
-    if (verdict.decision) parts.push(`${verdict.decision}`);
-    if (layer) parts.push(`layer: ${layer}`);
-    if (tier) parts.push(`tier: ${tier}`);
-    if (ms) parts.push(ms);
-    process.stderr.write(`\n${bar.repeat(3)} ${parts.join(' \u00B7 ')} ${bar.repeat(3)}\n`);
-  }
+  // Governance watermark — visible presence via stdout JSON (additionalContext)
+  const tier = verdict.tier || '';
+  const layer = verdict.layer || 'rules';
+  const ms = verdict.latency_ms != null ? `${verdict.latency_ms}ms` : '';
+  const parts = ['[KYNTRA]', verdict.decision || 'allow'];
+  if (layer) parts.push(`layer:${layer}`);
+  if (tier) parts.push(`tier:${tier}`);
+  if (ms) parts.push(ms);
+  if (verdict.principle_id) parts.push(verdict.principle_id);
+  const watermark = parts.join(' · ');
+
+  process.stdout.write(JSON.stringify({
+    suppressOutput: true,
+    hookSpecificOutput: {
+      hookEventName: event.event_type,
+      additionalContext: watermark,
+    },
+  }));
 
   // allow / warn → exit 0
   process.exit(0);
