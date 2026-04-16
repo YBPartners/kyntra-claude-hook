@@ -1,6 +1,6 @@
 {
   "name": "@kyntra/claude-hook",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Real-time AI agent governance for Claude Code — enforce your coding principles via hooks. Blocks destructive commands and catches false 'complete' reports.",
   "keywords": [
     "claude-code",
@@ -31,10 +31,10 @@
   "type": "module",
   "main": "./bridge.js",
   "bin": {
-    "kyntra-claude-hook": "./install.js"
+    "kyntra-hook": "./cli.js"
   },
   "files": [
-    "install.js",
+    "cli.js",
     "bridge.js",
     "client.js",
     "README.md",
