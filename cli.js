@@ -32,6 +32,11 @@ const KYNTRA_MARKER = '@kyntra/claude-hook'; // used to identify our own entries
 function buildHookSnippet() {
   const cmd = `node "${BRIDGE_PATH}"`;
   return {
+    UserPromptSubmit: [
+      {
+        hooks: [{ type: 'command', command: cmd, _kyntra: KYNTRA_MARKER }],
+      },
+    ],
     PreToolUse: [
       {
         matcher: 'Bash|Edit|Write|MultiEdit',
