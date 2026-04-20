@@ -1,5 +1,7 @@
 # @kyntra/claude-hook
 
+[English](./README.md) · [한국어](./README.ko.md)
+
 > **The harness-engineering layer of [Kyntra AIMOps Control Tower](https://kyntra.ai.kr)** — open-source client (MIT), patent-pending server.
 
 Governance hooks for Claude Code. A deterministic rule engine + LLM judgement layer sits in front of every tool call and returns **allow / block / warn** in under a second — stopping destructive commands, hallucinated "done" reports, and soft-rule violations *before* they land.
@@ -48,7 +50,7 @@ If you're weighing **writing your own Claude Code hook** against this one, the h
 | Concern | DIY shell hook | Kyntra |
 |---|---|---|
 | Block `rm -rf /`, `git push --force main` | Regex does it | Same (Layer 1, <1 ms, zero API cost) |
-| Catch "the deploy is done" *when it isn't* | Needs an LLM call you write | Layer 2 (Haiku) flags unverified completion claims out of the box |
+| Catch "the deploy is done" *when it isn't* | Needs an LLM call you write | Built-in Layer 1 rule flags unverified completion claims; Layer 2 (Haiku) handles the ambiguous contextual cases |
 | Turn `CLAUDE.md` rules into enforcement | Hand-port each rule to regex/prompt | Paste CLAUDE.md → Kyntra extracts enforceable rules |
 | Trust signals — which rules actually fire, which are noisy | You build the dashboard | Dashboard + human-approved promotion candidates built-in |
 | Maintenance when Claude Code changes event shapes | Yours | Server-side; the client stays ~200 lines |
