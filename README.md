@@ -1,6 +1,8 @@
 # @kyntra/claude-hook
 
-Real-time AI agent governance for Claude Code. Enforce your coding principles via hooks — block destructive commands, catch false "complete" reports, and get warned on soft violations before they land.
+> **The harness-engineering layer of [Kyntra AIMOps Control Tower](https://kyntra.ai.kr)** — open-source client (MIT), patent-pending server.
+
+Governance hooks for Claude Code. A deterministic rule engine + LLM judgement layer sits in front of every tool call and returns **allow / block / warn** in under a second — stopping destructive commands, hallucinated "done" reports, and soft-rule violations *before* they land.
 
 ```
 $ claude
@@ -11,7 +13,20 @@ $ claude
          Layer: rules
 ```
 
-This is the open-source client adapter. It communicates with Kyntra's server-side governance engine (patent-pending) over HTTPS.
+This is the open-source client adapter. It posts each hook event to Kyntra's server-side governance engine (patent-pending) over HTTPS and exits with the verdict.
+
+## Who this is for
+
+Kyntra fits when you:
+- Keep catching Claude claiming "done" when the work isn't verified (the classic `curl OK → site broken` pattern).
+- Want the rules in your `CLAUDE.md` **enforced**, not just *hinted* at once per session.
+- Need force-push, `rm -rf /`, and bare-`wrangler deploy` blocking at the hook layer — before Claude shells out.
+- Run multiple Claude Code users / projects and want per-account trust profiles and promotion candidates.
+
+Not a fit if:
+- You only need plain regex filters — a shell hook in `~/.claude/settings.json` is enough.
+- Your workflow never touches destructive, deploy, or secret-bearing commands.
+- You're air-gapped — Kyntra needs outbound HTTPS to `api.kyntra.ai.kr`.
 
 ---
 
@@ -24,7 +39,22 @@ The problem isn't the model — reminders are *advisory*. Hooks are *enforcement
 - **Determinism first** — a built-in regex rule engine catches the obvious classes. No LLM calls, no cost, no latency.
 - **LLM for the ambiguous rest** — Kyntra's Layer 2 (Haiku) handles contextual judgements your regex can't express.
 - **Your rules, enforced** — register custom rules via the dashboard or import them from your CLAUDE.md.
-- **Self-evolving principles** — repeat violations bubble up; reliable principles decay. Kyntra's trust-adjustment engine is patent-pending (KR claims 1 & 2).
+- **Semi-automated principle evolution (human-in-the-loop)** — repeat violations accumulate into *promotion candidates*; reliable principles decay. Kyntra surfaces the candidates automatically but **you approve every promotion** — no silent rule changes. Trust-adjustment engine is patent-pending (KR claims 1 & 2).
+
+## Kyntra vs. a DIY hook
+
+If you're weighing **writing your own Claude Code hook** against this one, the honest tradeoff:
+
+| Concern | DIY shell hook | Kyntra |
+|---|---|---|
+| Block `rm -rf /`, `git push --force main` | Regex does it | Same (Layer 1, <1 ms, zero API cost) |
+| Catch "the deploy is done" *when it isn't* | Needs an LLM call you write | Layer 2 (Haiku) flags unverified completion claims out of the box |
+| Turn `CLAUDE.md` rules into enforcement | Hand-port each rule to regex/prompt | Paste CLAUDE.md → Kyntra extracts enforceable rules |
+| Trust signals — which rules actually fire, which are noisy | You build the dashboard | Dashboard + human-approved promotion candidates built-in |
+| Maintenance when Claude Code changes event shapes | Yours | Server-side; the client stays ~200 lines |
+| Cost | Your dev time, ongoing | $15/mo Starter · $29/mo Pro (14-day money-back) |
+
+The harness stays open (MIT, ~200 lines — read every line before trusting it). The server engine (three-layer: KV cache → regex rules → Haiku LLM) is the part you'd otherwise have to build yourself.
 
 ## Install
 

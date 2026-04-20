@@ -65,7 +65,7 @@ function settingsPath() {
 // ─── Commands ─────────────────────────────────────────
 
 function usage() {
-  process.stdout.write(`@kyntra/claude-hook — Real-time AI agent governance for Claude Code
+  process.stdout.write(`@kyntra/claude-hook — Governance hooks for Claude Code (Kyntra AIMOps Control Tower)
 
 Usage:
   npx @kyntra/claude-hook install       Install hooks into ~/.claude/settings.json
